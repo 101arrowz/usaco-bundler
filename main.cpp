@@ -7,21 +7,29 @@
 #ifdef _WIN32
 #include <direct.h>
 #define cd _chdir
+#define getcwd _getcwd
 #define sep '\\'
 #else
 #include <unistd.h>
 #define cd chdir
+#define getcwd getcwd
 #define sep '/'
 #endif
 
 void cdfp(std::string fileName) {
-    cd(fileName.substr(0, fileName.find_last_of(sep)).c_str());
+    int lastInd = fileName.find_last_of(sep);
+    if (lastInd == -1) {
+        return;
+    }
+    std::string dir = fileName.substr(0, lastInd);
+    if (cd(dir.c_str())) {
+        throw std::runtime_error("Could not chdir to " + dir);
+    }    
 }
 
 std::string process(const char* fileName, std::set<int> &processed) {
     std::ifstream fin(fileName);
     std::string fileNameStr (fileName);
-    cdfp(fileNameStr);
     if (!fin.good()) {
         std::string ext = fileNameStr.substr(fileNameStr.find_last_of('.') + 1);
         // Ignore .c and .h - assume those are external
@@ -34,6 +42,8 @@ std::string process(const char* fileName, std::set<int> &processed) {
             ? "// ignore"
             : "";
     }
+    cdfp(fileNameStr);
+    char* cwd = getcwd(nullptr, 255);
     std::stringstream s;
     s << fin.rdbuf();
     std::string res = s.str();
@@ -52,6 +62,9 @@ std::string process(const char* fileName, std::set<int> &processed) {
                 check = "\"\"";
             std::string fp = rawFP.substr(rawFP.find(check[0]) + 1, rawFP.find_last_of(check[1]) - 1);
             std::string result = process(fp.c_str(), processed);
+            if (cd(cwd)) {
+                throw std::runtime_error(std::string("Could not chdir to ") + cwd);
+            }
             if (result == "// ignore") {
                 out += line + '\n';
             } else if (result.size() != 0) {
@@ -71,14 +84,15 @@ int main(int argc, char* argv[]) {
         throw std::invalid_argument("missing filename");
     }
     std::set<int> processed;
-    std::string out = process(argv[1], processed);
-    cdfp(std::string(argv[1]));
-    std::ostream* strm = nullptr;
+    char* initCwd = getcwd(nullptr, 255);
+    std::string out = process(argv[1], processed) + "\n// This code was bundled by usaco-bundler\n";
+    if (cd(initCwd)) {
+        throw std::runtime_error(std::string("Could not chdir to ") + initCwd);
+    }
     if (argc < 3) {
-        strm = &std::cout;
+        std::cout << out;
     } else {
         std::ofstream fout(argv[2]);
-        strm = &fout;
+        fout << out;
     }
-    *strm << out << "\n// This code was bundled by usaco-bundler, a tool created by 101arrowz.\n";
 }
