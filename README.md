@@ -53,9 +53,9 @@ std::string cool() {
 Output:
 ```cpp
 #include <iostream>
-
-// File: epic.hpp
 #include <string>
+
+// File: epic.cpp
 std::string EPIC_STRING = "EPIC";
 
 // File: cool.cpp
@@ -68,7 +68,7 @@ int main() {
 }
 ```
 
-As you can see, header files and normal `.cpp` files work, both double-quote and angle-bracket `#include`s work, and duplicate `#include`s are ignored.
+As you can see, header files and normal `.cpp` files work, both double-quote and angle-bracket `#include`s work, and duplicate `#include`s are ignored. All STL imports are hoisted to the top of the file.
 
 
 ## Wait, isn't using other people's code cheating?
