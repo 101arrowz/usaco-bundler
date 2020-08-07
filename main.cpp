@@ -1,22 +1,26 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <sstream>
-#include <functional>
 #include <set>
 #ifdef _WIN32
 #include <direct.h>
 #define cd _chdir
 #define getcwd _getcwd
 #define sep '\\'
+#define pathbufsize 261
+#define fullpath(fp, buf) _fullpath(buf, fp, pathbufsize)
 #else
 #include <unistd.h>
+#include <stdlib.h>
 #define cd chdir
 #define getcwd getcwd
 #define sep '/'
+#define pathbufsize 4097
+#define fullpath(fp, buf) realpath(fp, buf)
 #endif
 
-typedef std::pair<std::string, std::set<std::string>> ret;
+std::set<std::string> processed;
+std::set<std::string> toInclude;
 
 void cdfp(std::string fileName) {
     int lastInd = fileName.find_last_of(sep);
@@ -29,71 +33,64 @@ void cdfp(std::string fileName) {
     }    
 }
 
-ret process(const char* fileName, std::set<int> &processed) {
-    std::ifstream fin(fileName);
-    std::string fileNameStr (fileName);
+std::string process(const char* fileName) {
+    char filePath[pathbufsize];
+    !fullpath(fileName, filePath);
+    if (!processed.insert(filePath).second) {
+        // This file has already been processed
+        return "";
+    }
+    std::ifstream fin(filePath);
     if (!fin.good()) {
+        std::string fileNameStr (fileName);
         std::string ext = fileNameStr.substr(fileNameStr.find_last_of('.') + 1);
         // Ignore .c and .h - assume those are external
         if (ext == "cpp" || ext == "hpp") {
-            std::cerr << "WARN: Included file " << fileName << " not found. Skipping.\n";
+            std::cerr << "WARN: Included file " << filePath << " not found. Skipping.\n";
         }
         // If there was no extension or the extension wasn't one of those, no need to warn.
         // IDE would have caught it, or it's STL.
-        ret r;
-        r.second.insert(fileName);
-        return r;
+        toInclude.insert(fileName);
+        return "";
     }
-    cdfp(fileNameStr);
-    char* cwd = getcwd(nullptr, 255);
-    std::stringstream s;
-    s << fin.rdbuf();
-    std::string res = s.str();
-    std::stringstream input(res);
-    if (!processed.insert(std::hash<std::string>{}(res)).second) {
-        // This file has already been processed
-        return ret();
-    }
+    cdfp(filePath);
+    char* cwd = getcwd(nullptr, pathbufsize);
     std::string line;
-    ret r;
-    while (std::getline(input, line)) {
+    std::string out;
+    while (std::getline(fin, line)) {
         if (line.substr(0, 8) == "#include") {
             std::string rawFP = line.substr(9);
             const char* check = "<>";
             if (rawFP.find(check[0]) == -1)
                 check = "\"\"";
             std::string fp = rawFP.substr(rawFP.find(check[0]) + 1, rawFP.find_last_of(check[1]) - 1);
-            ret result = process(fp.c_str(), processed);
+            std::string result = process(fp.c_str());
             if (cd(cwd)) {
                 throw std::runtime_error(std::string("Could not chdir to ") + cwd);
             }
-            for (std::string s : result.second) {
-                r.second.insert(s);
-            }
-             if (result.first.size() != 0) {
-                r.first += "// File: " + fp + '\n' + result.first + '\n';
+            if (result.size() != 0) {
+                out += "// File: " + fp + '\n' + result + '\n';
             }
         } else if (line == "#pragma once") {
             // ignore - files are bundled only once automatically
         } else {
-            r.first += line + '\n';
+            out += line + '\n';
         }
     }
-    return r;
+    return out;
 }
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         throw std::invalid_argument("missing filename");
     }
-    std::set<int> processed;
-    char* initCwd = getcwd(nullptr, 255);
-    ret out = process(argv[1], processed);
+    char* initCwd = getcwd(nullptr, pathbufsize);
+    std::string processed = process(argv[1]);
     std::string o;
-    for (std::string dep : out.second) {
+    for (std::string dep : toInclude) {
         o += "#include <" + dep + ">\n";
     }
-    o += '\n' + out.first + "\n// This code was bundled by usaco-bundler\n";
+    o += '\n' + processed + "\n// This code was bundled by usaco-bundler\n";
     if (cd(initCwd)) {
         throw std::runtime_error(std::string("Could not chdir to ") + initCwd);
     }
